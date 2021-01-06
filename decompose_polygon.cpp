@@ -4,6 +4,14 @@
 #include "plot.h"
 #include <igl/triangle_triangle_adjacency.h>
 #include <igl/copyleft/cgal/orient2D.h>
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/Polygon_2.h>
+#include <CGAL/Partition_traits_2.h>
+#include <CGAL/partition_2.h>
+typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
+typedef CGAL::Partition_traits_2<K> Traits;
+typedef Traits::Point_2 Point;
+typedef Traits::Polygon_2 Polygon_2;
 
 bool is_convex(
   const Eigen::MatrixXd& P
@@ -83,7 +91,12 @@ void merge_triangles(
     
     // if merged polygon is simple, drop edge he/rhe
     // erase L[p2], add to L[p1]
-    if(is_simple_polygon(poly) && is_convex(poly)){
+    Polygon_2 pgn;
+    for(int i = 0; i < poly.rows(); i++)
+      pgn.push_back(Point(poly(i,0), poly(i,1)));
+    
+    // if(is_simple_polygon(poly) && is_convex(poly)){
+    if(pgn.is_simple()){
       H[he]=-1;
       H[rhe]=-1;
       G[p2] = p1; // p2 belongs to p1 now
@@ -91,6 +104,35 @@ void merge_triangles(
       L[p2].clear();
     }
   }
+
+  // TODO: for(each simple poly defined in L){ // L[i] is a polygon, it contains the endpoints ids in V
+    // - TODO: convert L to pgn, e.g. line 96
+    // - try cgal partition on pgn
+    std::vector<Polygon_2> partition_polys;
+    CGAL::approx_convex_partition_2(pgn.vertices_begin(),
+                                    pgn.vertices_end(),
+                                    std::back_inserter(partition_polys));
+    // visualize the polygons
+    std::vector<Eigen::MatrixXd> P_sets; // for every edge in partition_polys we add two new points - just for vis
+    for(int i = 0; i < partition_polys.size(); i++){
+      auto poly = partition_polys[i];
+      Eigen::MatrixXd P;
+      int index = 0;
+      for(auto it = poly.vertices_begin(); it != poly.vertices_end(); it++){
+        P.conservativeResize(P.rows()+1, 2);
+        P.row(index) << it->x(), it->y();
+        index++;
+      }
+      P_sets.push_back(P);
+      igl::opengl::glfw::Viewer viewer;
+      Eigen::VectorXi T(P.rows());
+      T.setConstant(1);
+      viewer.data().set_mesh(V, F);
+      plot_polygon(viewer, T, P);
+      viewer.launch();
+    }
+  }
+
 }
 
 void decompose_polygon(
