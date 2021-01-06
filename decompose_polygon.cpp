@@ -131,6 +131,7 @@ void merge_triangles(
       plot_polygon(viewer, T, P);
       viewer.launch();
     }
+    // TODO: convert the partition_polys back to L
   }
 
 }
