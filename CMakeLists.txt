@@ -53,7 +53,7 @@ set(RANDOMINIT_FILES
 )
 
 set(TEST_FILES
-    test.cpp
+    test_onepatch.cpp
     edge_split.cpp
     path_tracing.cpp
     target_polygon.cpp
