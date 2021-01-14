@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
     Eigen::VectorXi ci;
     Eigen::MatrixXd uv_new;
 
-    Eigen::VectorXi T, R;
+    Eigen::VectorXi T, R, mark;
     Eigen::MatrixXd polygon;
     
     auto bd = bds_uv[0];
@@ -91,6 +91,7 @@ int main(int argc, char *argv[])
         polygon.conservativeResize(size0 + v_list.size() - 1, 2);
         T.conservativeResize(size0 + v_list.size() - 1);
         R.conservativeResize(size0 + v_list.size() - 1);
+        mark.conservativeResize(size0 + v_list.size() - 1);
         for (int j = 0; j < v_list.size() - 1; j++)
         {
             double r = (double)j / (double)(v_list.size() - 1);
@@ -100,10 +101,15 @@ int main(int argc, char *argv[])
                 R(size0 + j) = floor(1 - S(v1));
             else
                 R(size0 + j) = 0;
+            if (j == 0)
+                mark(size0 + j) = 1;
+            else
+                mark(size0 + j) = 0;
         }
     }
     std::cout << R.rows() << " " << T.rows() << " " << polygon.rows();
-    match_maker(V, F, uv_new, c, ci, R, T, polygon);
+    
+    match_maker(V, F, uv_new, c, ci, R, T, polygon, mark);
 
     igl::SLIMData sData;
     sData.slim_energy = igl::SLIMData::SYMMETRIC_DIRICHLET;
@@ -121,8 +127,8 @@ int main(int argc, char *argv[])
             slim_solve(sData, 20, E);
             viewer.data().clear();
             viewer.data().set_mesh(V, F);
-            for (int i = 0; i < 3; i++)
-                viewer.data().add_points(V.row(ci(i)), Eigen::RowVector3d(1, 0, 0));
+            // for (int i = 0; i < 3; i++)
+            //     viewer.data().add_points(V.row(ci(i)), Eigen::RowVector3d(1, 0, 0));
             viewer.core().align_camera_center(V);
             viewer.data().set_uv(sData.V_o, F);
             viewer.data().show_texture = true;
@@ -132,8 +138,8 @@ int main(int argc, char *argv[])
             slim_solve(sData, 20, E);
             viewer.data().clear();
             viewer.data().set_mesh(sData.V_o, F);
-            for (int i = 0; i < 3; i++)
-                viewer.data().add_points(sData.V_o.row(ci(i)), Eigen::RowVector3d(1, 0, 0));
+            // for (int i = 0; i < 3; i++)
+            //     viewer.data().add_points(sData.V_o.row(ci(i)), Eigen::RowVector3d(1, 0, 0));
             viewer.core().align_camera_center(sData.V_o);
             viewer.data().show_texture = false;
         }

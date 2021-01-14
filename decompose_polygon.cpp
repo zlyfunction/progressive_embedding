@@ -13,6 +13,17 @@ typedef CGAL::Partition_traits_2<K> Traits;
 typedef Traits::Point_2 Point;
 typedef Traits::Polygon_2 Polygon_2;
 
+int find_next_mark(const Eigen::VectorXi &mark, int start)
+{
+  int size = mark.rows();
+  int next = (start + 1) % size;
+
+  while (mark(next) != 1)
+    next = (next + 1) % size;
+
+  return next;
+}
+
 bool is_convex(
     const Eigen::MatrixXd &P)
 {
@@ -33,6 +44,7 @@ bool is_convex(
 void merge_triangles(
     const Eigen::MatrixXd &V,
     const Eigen::MatrixXi &F,
+    const Eigen::VectorXi &mark,
     std::vector<std::vector<int>> &L)
 {
 
@@ -112,28 +124,87 @@ void merge_triangles(
     }
   }
 
-
-  // TODO: for(each simple poly defined in L){ // L[i] is a polygon, it contains the endpoints ids in V
-  // - TODO: convert L to pgn, e.g. line 96
-  // - try cgal partition on pgn
   std::cout << "TODO here" << std::endl;
+
   std::cout << "L.size() = " << L.size() << std::endl;
+  // TODO: get simplified L
+  std::vector<std::vector<int>> L_sim;
+  for (int ii = 0; ii < L.size(); ii++)
+  {
+    if (L[ii].size() == 0)
+      continue;
+    std::vector<int> poly_sim; // simplified polygon
+    std::cout << "L[" << ii << "].size() = " << L[ii].size() << std::endl;
+    Eigen::MatrixXd PL, PL_sim;
+
+    for (int j = 0; j < L[ii].size(); j++)
+    {
+      int v_id = L[ii][j], v_prev = L[ii][(j + L[ii].size() - 1) % L[ii].size()], v_next = L[ii][(j + 1) % L[ii].size()];
+      if (mark(v_id) == 1) // non_subdivide node
+      {
+        poly_sim.push_back(v_id);
+      }
+      else // check angle
+      {
+        double l1 = (V.row(v_id) - V.row(v_prev)).norm();
+        double l2 = (V.row(v_id) - V.row(v_next)).norm();
+        double l3 = (V.row(v_next) - V.row(v_prev)).norm();
+        double cos_a = (l1 * l1 + l2 * l2 - l3 * l3) / (2 * l1 * l2);
+        if (fabs(cos_a + 1) > 0.01)
+        {
+          poly_sim.push_back(v_id);
+          std::cout << "keep subdivide node " << v_id << ", angle " << std::acos(cos_a) / igl::PI * 180 << std::endl;
+        }
+      }
+      PL.conservativeResize(PL.rows() + 1, 2);
+      PL.row(PL.rows() - 1) = V.row(v_id);
+    }
+    // igl::opengl::glfw::Viewer viewer;
+    // Eigen::VectorXi TL(PL.rows());
+    // TL.setConstant(1);
+
+    // viewer.data().set_mesh(V, F);
+    // plot_polygon(viewer, TL, PL);
+    // viewer.launch();
+
+    std::cout << "size of simplified polygon: " << poly_sim.size() << std::endl;
+    for (int v_id : poly_sim)
+    {
+      PL_sim.conservativeResize(PL_sim.rows() + 1, 2);
+      PL_sim.row(PL_sim.rows() - 1) = V.row(v_id);
+    }
+    // igl::opengl::glfw::Viewer viewer_sim;
+
+    // Eigen::VectorXi TL_sim(PL_sim.rows());
+    // TL_sim.setConstant(1);
+    // viewer_sim.data().set_mesh(V, F);
+    // plot_polygon(viewer_sim, TL_sim, PL_sim);
+    // viewer_sim.launch();
+
+    L_sim.push_back(poly_sim);
+  }
+
+  L = L_sim; // use the simplified polygon
+
   std::vector<std::vector<int>> L_new;
   for (int ii = 0; ii < L.size(); ii++)
   {
     std::cout << "L[" << ii << "].size() = " << L[ii].size() << std::endl;
-    if (L[ii].size() == 0) continue;
+    if (L[ii].size() == 0)
+      continue;
 
     Polygon_2 pgn;
     for (int v_id : L[ii])
+    {
       pgn.push_back(Point(V(v_id, 0), V(v_id, 1)));
+    }
 
     std::vector<Polygon_2> partition_polys;
     CGAL::approx_convex_partition_2(pgn.vertices_begin(),
                                     pgn.vertices_end(),
                                     std::back_inserter(partition_polys));
     // visualize the polygons
-    std::vector<Eigen::MatrixXd> P_sets; // for every edge in partition_polys we add two new points - just for vis
+    // std::vector<Eigen::MatrixXd> P_sets; // for every edge in partition_polys we add two new points - just for vis
     for (int i = 0; i < partition_polys.size(); i++)
     {
       auto poly = partition_polys[i];
@@ -158,18 +229,51 @@ void merge_triangles(
         }
       }
 
-      std::cout << "poly_id.size() = " << poly_id.size() << "\tP.rows()" << P.rows() << std::endl;
-      L_new.push_back(poly_id);
-      P_sets.push_back(P);
-      igl::opengl::glfw::Viewer viewer;
-      Eigen::VectorXi T(P.rows());
-      T.setConstant(1);
-      viewer.data().set_mesh(V, F);
-      plot_polygon(viewer, T, P);
-      viewer.launch();
-    }  
+      std::cout << "poly_id.size() = " << poly_id.size() << "\tP.rows() = " << P.rows() << std::endl;
+      std::cout << "P:" << std::endl
+                << std::setprecision(17) << P << std::endl;
+
+      // subdivide poly_id
+      std::vector<int> poly_sub;
+      for (int k = 0; k < poly_id.size(); k++)
+      {
+        int v0 = poly_id[k], v1 = poly_id[(k + 1) % poly_id.size()];
+        poly_sub.push_back(v0);
+        std::cout << "v1" << v1 << "\tnext mark" << find_next_mark(mark, v0) << std::endl;
+        int index0 = (v1 - v0 + V.rows()) % V.rows(), index1 = (find_next_mark(mark, v0) - v0 + V.rows()) % V.rows();
+        if (index0 <= index1)
+        {
+          std::cout << "here" << std::endl;
+          int kk = (v0 + 1) % V.rows();
+          while (kk != v1)
+          {
+            poly_sub.push_back(kk);
+            kk = (kk + 1) % V.rows();
+          }
+        }
+      }
+      L_new.push_back(poly_sub);
+
+      // igl::opengl::glfw::Viewer viewer;
+      // Eigen::VectorXi T(P.rows());
+      // T.setConstant(1);
+      // viewer.data().set_mesh(V, F);
+      // plot_polygon(viewer, T, P);
+      // viewer.launch();
+
+      Eigen::MatrixXd Pfull(poly_sub.size(), 2);
+      for (int k = 0; k < poly_sub.size(); k++)
+      {
+        Pfull.row(k) = V.row(poly_sub[k]);
+      }
+      // igl::opengl::glfw::Viewer viewerfull;
+      // Eigen::VectorXi Tfull(Pfull.rows());
+      // Tfull.setConstant(1);
+      // viewerfull.data().set_mesh(V, F);
+      // plot_polygon(viewerfull, Tfull, Pfull);
+      // viewerfull.launch();
+    }
   }
-  // TODO: convert the partition_polys back to L
   L = L_new;
 }
 
@@ -177,15 +281,17 @@ void decompose_polygon(
     const Eigen::MatrixXd &P,
     const Eigen::VectorXi &R,
     const Eigen::MatrixXd &C,
+    const Eigen::VectorXi &mark,
     Eigen::MatrixXd &V,
     Eigen::MatrixXi &F,
     std::vector<std::vector<int>> &L)
 {
+
   bool succ = Shor_van_wyck(P, R, "", V, F, false);
   assert(succ && "Shor failed");
   embed_points(C, V, F);
   igl::opengl::glfw::Viewer vr;
 
-  merge_triangles(V, F, L);
+  merge_triangles(V, F, mark, L);
   std::cout << "end of decompose polygon" << std::endl;
 }
