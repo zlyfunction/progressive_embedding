@@ -129,6 +129,8 @@ void merge_triangles(
   std::cout << "L.size() = " << L.size() << std::endl;
   // TODO: get simplified L
   std::vector<std::vector<int>> L_sim;
+  std::vector<int> L_size_full; // for partition check
+  std::vector<std::vector<int>> L_full;
   for (int ii = 0; ii < L.size(); ii++)
   {
     if (L[ii].size() == 0)
@@ -136,7 +138,6 @@ void merge_triangles(
     std::vector<int> poly_sim; // simplified polygon
     std::cout << "L[" << ii << "].size() = " << L[ii].size() << std::endl;
     Eigen::MatrixXd PL, PL_sim;
-
     for (int j = 0; j < L[ii].size(); j++)
     {
       int v_id = L[ii][j], v_prev = L[ii][(j + L[ii].size() - 1) % L[ii].size()], v_next = L[ii][(j + 1) % L[ii].size()];
@@ -144,17 +145,26 @@ void merge_triangles(
       {
         poly_sim.push_back(v_id);
       }
-      else // check angle
+      else 
       {
-        double l1 = (V.row(v_id) - V.row(v_prev)).norm();
-        double l2 = (V.row(v_id) - V.row(v_next)).norm();
-        double l3 = (V.row(v_next) - V.row(v_prev)).norm();
-        double cos_a = (l1 * l1 + l2 * l2 - l3 * l3) / (2 * l1 * l2);
-        if (fabs(cos_a + 1) > 0.01)
-        {
+        int index0 = (v_next - v_id + V.rows()) % V.rows(), index1 = (find_next_mark(mark, v_id) - v_id + V.rows()) % V.rows();
+        if (index0 > index1) 
           poly_sim.push_back(v_id);
-          std::cout << "keep subdivide node " << v_id << ", angle " << std::acos(cos_a) / igl::PI * 180 << std::endl;
+        else
+        {
+          index0 = (v_id - v_prev + V.rows()) % V.rows(), index1 = (find_next_mark(mark, v_prev) - v_prev + V.rows()) % V.rows();
+          if (index0 > index1)
+            poly_sim.push_back(v_id);
         }
+        // double l1 = (V.row(v_id) - V.row(v_prev)).norm();
+        // double l2 = (V.row(v_id) - V.row(v_next)).norm();
+        // double l3 = (V.row(v_next) - V.row(v_prev)).norm();
+        // double cos_a = (l1 * l1 + l2 * l2 - l3 * l3) / (2 * l1 * l2);
+        // if (fabs(cos_a + 1) > 0.01)
+        // {
+        //   poly_sim.push_back(v_id);
+        //   std::cout << "keep subdivide node " << v_id << ", angle " << std::acos(cos_a) / igl::PI * 180 << std::endl;
+        // }
       }
       PL.conservativeResize(PL.rows() + 1, 2);
       PL.row(PL.rows() - 1) = V.row(v_id);
@@ -162,11 +172,9 @@ void merge_triangles(
     // igl::opengl::glfw::Viewer viewer;
     // Eigen::VectorXi TL(PL.rows());
     // TL.setConstant(1);
-
     // viewer.data().set_mesh(V, F);
     // plot_polygon(viewer, TL, PL);
     // viewer.launch();
-
     std::cout << "size of simplified polygon: " << poly_sim.size() << std::endl;
     for (int v_id : poly_sim)
     {
@@ -174,14 +182,14 @@ void merge_triangles(
       PL_sim.row(PL_sim.rows() - 1) = V.row(v_id);
     }
     // igl::opengl::glfw::Viewer viewer_sim;
-
     // Eigen::VectorXi TL_sim(PL_sim.rows());
     // TL_sim.setConstant(1);
     // viewer_sim.data().set_mesh(V, F);
     // plot_polygon(viewer_sim, TL_sim, PL_sim);
     // viewer_sim.launch();
-
     L_sim.push_back(poly_sim);
+    L_size_full.push_back(L[ii].size());
+    L_full.push_back(L[ii]);
   }
 
   L = L_sim; // use the simplified polygon
@@ -189,22 +197,20 @@ void merge_triangles(
   std::vector<std::vector<int>> L_new;
   for (int ii = 0; ii < L.size(); ii++)
   {
-    std::cout << "L[" << ii << "].size() = " << L[ii].size() << std::endl;
-    if (L[ii].size() == 0)
+    std::cout << "\nL[" << ii << "].size() = " << L[ii].size() << std::endl;
+    if (L[ii].size() == 0) // not likely to happen for L_sim
       continue;
-
+    // construct pgn for cgal partition
     Polygon_2 pgn;
     for (int v_id : L[ii])
     {
       pgn.push_back(Point(V(v_id, 0), V(v_id, 1)));
     }
-
     std::vector<Polygon_2> partition_polys;
     CGAL::approx_convex_partition_2(pgn.vertices_begin(),
                                     pgn.vertices_end(),
                                     std::back_inserter(partition_polys));
-    // visualize the polygons
-    // std::vector<Eigen::MatrixXd> P_sets; // for every edge in partition_polys we add two new points - just for vis
+    int cnt_sim = 0, cnt_full = 0;
     for (int i = 0; i < partition_polys.size(); i++)
     {
       auto poly = partition_polys[i];
@@ -230,8 +236,12 @@ void merge_triangles(
       }
 
       std::cout << "poly_id.size() = " << poly_id.size() << "\tP.rows() = " << P.rows() << std::endl;
-      std::cout << "P:" << std::endl
-                << std::setprecision(17) << P << std::endl;
+      if (poly_id.size() != P.rows())
+        std::cout << "find v_id error" << std::endl;
+      if (poly_id.size() < 3)
+        std::cout << "degenerate polygon error" << std::endl;
+      // std::cout << "P:" << std::endl
+      //           << std::setprecision(17) << P << std::endl;
 
       // subdivide poly_id
       std::vector<int> poly_sub;
@@ -239,11 +249,12 @@ void merge_triangles(
       {
         int v0 = poly_id[k], v1 = poly_id[(k + 1) % poly_id.size()];
         poly_sub.push_back(v0);
-        std::cout << "v1" << v1 << "\tnext mark" << find_next_mark(mark, v0) << std::endl;
         int index0 = (v1 - v0 + V.rows()) % V.rows(), index1 = (find_next_mark(mark, v0) - v0 + V.rows()) % V.rows();
+        std::cout << "v0 = " << v0 << "," << mark(v0) << "\tv1 = " << v1 << "," << mark(v1) << std::endl; 
+        std::cout << "v0_to_v1 = " << index0 << " v0_to_next_mark = " << index1 << std::endl;
+        
         if (index0 <= index1)
         {
-          std::cout << "here" << std::endl;
           int kk = (v0 + 1) % V.rows();
           while (kk != v1)
           {
@@ -253,7 +264,9 @@ void merge_triangles(
         }
       }
       L_new.push_back(poly_sub);
-
+      std::cout << "subdivide poly size: " << poly_sub.size() << std::endl;
+      cnt_sim += poly_id.size();
+      cnt_full += poly_sub.size();
       // igl::opengl::glfw::Viewer viewer;
       // Eigen::VectorXi T(P.rows());
       // T.setConstant(1);
@@ -272,8 +285,17 @@ void merge_triangles(
       // viewerfull.data().set_mesh(V, F);
       // plot_polygon(viewerfull, Tfull, Pfull);
       // viewerfull.launch();
+      for (auto v : poly_id) std::cout << v << " ";
+      std::cout << std::endl;
+      for (auto v : poly_sub) std::cout << v << " ";
+      std::cout << std::endl;
     }
-  }
+    std::cout << "check subdivide:" << L_size_full[ii] - cnt_full << " " <<(int)L[ii].size() - cnt_sim << std::endl;
+    for (auto v : L_full[ii]) std::cout << v << " ";
+    std::cout << std::endl;
+    for (auto v : L[ii]) std::cout << v << " ";
+    std::cout << std::endl;
+  } 
   L = L_new;
 }
 
