@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.1)
 project(matchmaker)
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
@@ -65,11 +67,26 @@ set(TEST_FILES
     loader.cpp
 )
 
+set(TESTOPT_FILES
+    test_onepatch_opt.cpp
+    edge_split.cpp
+    path_tracing.cpp
+    target_polygon.cpp
+    matchmaker.cpp
+    mst.cpp
+    decompose_polygon.cpp
+    embed_points.cpp
+    plot.cpp
+    loader.cpp
+    projected_newton.cpp
+)
+
 #add_executable(matchmaker_bin ${MATCHMAKER_FILES})
 #add_executable(genus_zero_tutte_bin ${GENUSZERO_FILES})
 #add_executable(untangle_bin ${UNTANGLE_FILES})
 #add_executable(random_init_bin ${RANDOMINIT_FILES})
 add_executable(test_bin ${TEST_FILES})
+add_executable(test_opt_bin ${TESTOPT_FILES})
 
 target_link_libraries(progressive_embedding igl::core igl::triangle igl::opengl_glfw igl::cgal igl::predicates igl::opengl_glfw_imgui tbb_static)
 target_link_libraries(shor_van_wyck igl::core igl::triangle igl::cgal igl::opengl_glfw igl::opengl_glfw_imgui igl::predicates)
@@ -80,4 +97,5 @@ target_include_directories(progressive_embedding SYSTEM PUBLIC ${THIRD_PARTY_DIR
 #target_link_libraries(untangle_bin progressive_embedding shor_van_wyck)
 #target_link_libraries(random_init_bin progressive_embedding shor_van_wyck)
 target_link_libraries(test_bin progressive_embedding shor_van_wyck)
-
+target_link_libraries(test_opt_bin progressive_embedding shor_van_wyck)
+target_compile_definitions(test_opt_bin PUBLIC AD_ENGINE=jakob)

@@ -14,6 +14,9 @@
 #include "validity_check.h"
 #include <igl/remove_unreferenced.h>
 #include <igl/boundary_loop.h>
+long global_autodiff_time = 0;
+long global_project_time = 0;
+
 int main(int argc, char *argv[])
 {
     auto cmdl = argh::parser(argc, argv, argh::parser::PREFER_PARAM_FOR_UNREG_OPTION);
