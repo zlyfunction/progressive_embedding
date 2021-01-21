@@ -200,11 +200,11 @@ double bi_linesearch(
     Eigen::MatrixXd &cur_v,
     Eigen::MatrixXd &d,
     std::function<double(Eigen::MatrixXd &)> energy,
-    std::function<Eigen::VectorXd(Eigen::MatrixXd &)> get_grad,
+    // std::function<Eigen::VectorXd(Eigen::MatrixXd &)> get_grad,
     Eigen::VectorXd &grad0,
-    double energy0, double &step_size)
+    double energy0)
 {
-  step_size = 2.0;
+  double step_size = 2.0;
   // step_size = 1.01;
   double new_energy = 0;
   Eigen::MatrixXd newx;
@@ -247,7 +247,7 @@ double bi_linesearch(
     }
     // std::cout << "energy did not decrease, step_size/=2\n";
   }
-  std::cout << "step size: " << step_size << std::endl;
+  // std::cout << "step size: " << step_size << std::endl;
   cur_v = newx;
   return new_energy;
 }

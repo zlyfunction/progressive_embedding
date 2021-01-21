@@ -125,7 +125,10 @@ int main(int argc, char *argv[])
         if (key == ' ')
         {
             slim_solve(sData, 20, E);
-            std::cout << E.maxCoeff() << std::endl;
+            // std::cout << "E.max = " << E.maxCoeff() << std::endl;
+            double E_sum = 0;
+            for (int it = 0; it < E.rows(); it++) E_sum += E(it);
+            std::cout << "E_avg = " << E_sum / E.rows() << std::endl;
             viewer.data().clear();
             viewer.data().set_mesh(V, F);
             // for (int i = 0; i < 3; i++)
