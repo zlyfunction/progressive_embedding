@@ -39,7 +39,7 @@
 #include <iostream>
 #include <unordered_map>
 #include <unordered_set>
-
+#include <iomanip>
 #include "projected_newton.hpp"
 long global_autodiff_time = 0;
 long global_project_time = 0;
@@ -216,26 +216,29 @@ int main(int argc, char *argv[])
         std::cout << "-in: input model name" << std::endl;
         std::cout << "-o: output model name" << std::endl;
         std::cout << "-uv: input uv" << std::endl;
+        std::cout << "-c: opt with constraints (0, 1)" << std::endl;
         exit(0);
     }
 
     int threshold;
     std::string model, uv_file, outfile;
     bool use_bd, space_filling_curve;
+    int use_c;
     cmdl("-in") >> model;
     cmdl("-uv") >> uv_file;
+    cmdl("-c") >> use_c;
     cmdl("-o", model + "_out.obj") >> outfile;
 
     Eigen::MatrixXd V, uv, uv_test, uv_out;
     Eigen::MatrixXi F_uv, F;
-    Eigen::VectorXd S;
+    Eigen::VectorXi S;
     std::map<std::pair<int, int>, std::vector<int>> corres;
     igl::deserialize(V, "V", model); // output the original one
     igl::deserialize(F_uv, "Fuv", model);
     igl::deserialize(F, "F_3d", model);
     igl::deserialize(uv_test, "uv", model);
     igl::deserialize(uv, "cur_uv", uv_file);
-    igl::deserialize(S, "S", model);
+    // igl::deserialize(S, "S", model);
     igl::deserialize(corres, "corres", model);
 
     Xi cut;
@@ -259,11 +262,35 @@ int main(int argc, char *argv[])
     std::cout << F_uv.rows() << std::endl;
     std::cout << F.rows() << std::endl;
     std::cout << uv.rows() << std::endl;
-    std::cout << S.rows() << std::endl;
+    // std::cout << S.rows() << std::endl;
     std::cout << corres.size() << std::endl;
 
     std::vector<std::vector<int>> bds_uv;
     igl::boundary_loop(F_uv, bds_uv);
+// compute target angle of singularities
+    S.resize(uv.rows());
+    S.setConstant(0);
+    std::cout << "singularity angles:" << std::endl;
+    for (int i : bds_uv[0])
+    {
+        double angle = 0;
+        for (int f_id = 0; f_id < F_uv.rows(); f_id++)
+        {
+            for (int v_id = 0; v_id < 3; v_id++)
+            {
+                if (F_uv(f_id, v_id) == i)
+                {
+                    double l1 = (uv.row(F_uv(f_id, v_id)) - uv.row(F_uv(f_id, (v_id + 1) % 3))).norm();
+                    double l2 = (uv.row(F_uv(f_id, v_id)) - uv.row(F_uv(f_id, (v_id + 2) % 3))).norm();
+                    double l3 = (uv.row(F_uv(f_id, (v_id + 2) % 3)) - uv.row(F_uv(f_id, (v_id + 1) % 3))).norm();
+                    double cos_a = (l1 * l1 + l2 * l2 - l3 * l3) / 2 / (l1 * l2);
+                    angle += std::acos(cos_a);
+                }
+            }
+        }
+        S(i) = std::floor(angle / 2 / igl::PI);
+        std::cout << i << " " << angle << " " << S(i) << std::endl;
+    }
 
     std::cout << "bds_uv sizse = " << bds_uv.size() << std::endl;
     for (auto bd : bds_uv)
@@ -311,7 +338,7 @@ int main(int argc, char *argv[])
             polygon.row(size0 + j) = (1 - r) * uv.row(v1) + r * uv.row(v2);
             T(size0 + j) = v_list[j];
             if (j == 0 && S(v1) != 0)
-                R(size0 + j) = floor(1 - S(v1));
+                R(size0 + j) = S(v1);
             else
                 R(size0 + j) = 0;
             if (j == 0)
@@ -361,6 +388,39 @@ int main(int argc, char *argv[])
 
     match_maker(V, F, uv_new, c, ci, R, T, polygon, mark);
 
+    auto cut_copy = cut;
+    for (int i = 0; i < polygon.rows(); i++)
+    {
+        for (int j = 0; j < uv_new.rows(); j++)
+        {
+            if (polygon.row(i) == uv_new.row(j))
+            {
+                std::cout << "polygon(" << i << ") = uv_new(" << j << ")" << std::endl;
+                for (int cut_row = 0; cut_row < cut.rows(); cut_row++)
+                {
+                    for (int cut_col = 0; cut_col < 4; cut_col++)
+                    {
+                        if (cut_copy(cut_row, cut_col) == i)
+                            cut(cut_row, cut_col) = j;
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    std::cout << "check new cut" << std::endl;
+    for (int i = 0; i < cut.rows(); i++)
+    {
+        double l1 = (uv_new.row(cut(i, 0)) - uv_new.row(cut(i, 1))).norm();
+        double l2 = (uv_new.row(cut(i, 2)) - uv_new.row(cut(i, 3))).norm();
+
+        if (fabs(l1 - l2) > 1e-5)
+        {
+            std::cout << cut.row(i) << "\tlendiff: " << fabs(l1 - l2) << std::endl;
+        }
+    }
+
     // prepare for opt
     // Xd cur_uv = uv_new;
     // build constraints
@@ -391,20 +451,27 @@ int main(int argc, char *argv[])
         Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
         for (int ii = 0; ii < N; ii++)
         {
-            spXd hessian; Vd grad;
+            spXd hessian;
+            Vd grad;
             get_grad_and_hessian(G, dblarea, cur_uv, grad, hessian);
             spXd kkt(hessian.rows() + Aeq.rows(), hessian.cols() + Aeq.rows());
             buildkkt(hessian, Aeq, AeqT, kkt);
-            if (ii == 0) solver.analyzePattern(kkt);
+            if (ii == 0)
+                solver.analyzePattern(kkt);
             grad.conservativeResize(kkt.cols());
-            for (int i = hessian.cols() + 1; i < kkt.cols(); i++) grad(i) = 0;
+            for (int i = hessian.cols() + 1; i < kkt.cols(); i++)
+                grad(i) = 0;
             solver.factorize(kkt);
+            // if (ii == 0)
+            //     solver.analyzePattern(hessian);
+            // solver.factorize(hessian);
+
             Vd newton = solver.solve(grad);
             newton.conservativeResize(hessian.cols());
             grad.conservativeResize(hessian.cols());
             Xd new_dir = -Eigen::Map<Xd>(newton.data(), cur_uv.rows(), 2); // newton dir
             energy = bi_linesearch(F, cur_uv, new_dir, compute_energy, grad, energy);
-            std::cout << energy << std::endl;
+            std::cout << std::setprecision(20) << energy << std::endl;
         }
         return energy;
     };
@@ -425,6 +492,7 @@ int main(int argc, char *argv[])
         {
             slim_solve(sData, 20, E);
             // std::cout << E.maxCoeff() << std::endl;
+            std::cout << E.sum() / E.rows() << std::endl;
             viewer.data().clear();
             viewer.data().set_mesh(V, F);
             // for (int i = 0; i < 3; i++)
@@ -462,10 +530,10 @@ int main(int argc, char *argv[])
         return false;
     };
     auto key_down_new = [&](
-                        igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifier) {
+                            igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifier) {
         if (key == ' ')
         {
-            energy = do_opt(uv_new, 150);
+            energy = do_opt(uv_new, 50);
             viewer.data().clear();
             viewer.data().set_mesh(V, F);
             viewer.core().align_camera_center(V);
@@ -497,7 +565,10 @@ int main(int argc, char *argv[])
         }
         return false;
     };
-    vr.callback_key_down = key_down_new;
+    if (use_c == 1)
+        vr.callback_key_down = key_down_new;
+    else
+        vr.callback_key_down = key_down;
     //plot_mesh(vr,uv,F,{},Eigen::VectorXi());
     vr.launch();
 

@@ -247,7 +247,7 @@ double bi_linesearch(
     }
     // std::cout << "energy did not decrease, step_size/=2\n";
   }
-  // std::cout << "step size: " << step_size << std::endl;
+  std::cout << "step size: " << step_size << std::endl;
   cur_v = newx;
   return new_energy;
 }
