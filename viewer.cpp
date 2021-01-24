@@ -313,7 +313,9 @@ int main(int argc, char* argv[])
             for (int i = hessian.cols() + 1; i < kkt.cols(); i++)
                 grad(i) = 0;
             solver.factorize(kkt);
-
+            Xd kkt_dense(kkt);
+            std::cout << "kkt" << kkt << std::endl;
+            std::cout << "grad" << grad << std::endl;
             Vd newton = solver.solve(grad);
             newton.conservativeResize(hessian.cols());
             grad.conservativeResize(hessian.cols());
