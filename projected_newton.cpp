@@ -110,7 +110,6 @@ double grad_and_hessian_from_jacobian(const Vd &area, const Xd &jacobian,
     Eigen::Matrix4d local_hessian;
     Eigen::RowVector4d local_grad;
     energy += AD_ENGINE::gradient_and_hessian_from_J(J, local_grad, local_hessian) * area(i) / total_area;
-    // energy += AD_ENGINE::gradient_and_hessian_from_J(J, local_grad, local_hessian) / f_num;
 
 #ifndef NOHESSIAN
     local_grad *= area(i) / total_area;
@@ -133,9 +132,6 @@ double grad_and_hessian_from_jacobian(const Vd &area, const Xd &jacobian,
         hessian.insert(v1 * f_num + i, v2 * f_num + i) = local_hessian(v1, v2);
   }
   hessian.makeCompressed();
-  // spXd id(4 * f_num, 4 * f_num);
-  // id.setIdentity();
-  // hessian = hessian + *id;//Eigen::DiagonalMatrix<double>::Identity();
 #endif
   return energy;
 }
@@ -173,17 +169,11 @@ double get_grad_and_hessian(const spXd &G, const Vd &area, const Xd &uv,
 int check_flip(const Eigen::MatrixXd &uv, const Eigen::MatrixXi &Fn)
 {
   int fl = 0;
-  // std::cout << "uv" << uv.rows() << std::endl;
-  // std::cout << uv << std::endl;
   for (int i = 0; i < Fn.rows(); i++)
   {
-    // std::cout << "Fn.row(i) = "<< Fn.row(i) << std::endl;
     double a[2] = {uv(Fn(i, 0), 0), uv(Fn(i, 0), 1)};
     double b[2] = {uv(Fn(i, 1), 0), uv(Fn(i, 1), 1)};
     double c[2] = {uv(Fn(i, 2), 0), uv(Fn(i, 2), 1)};
-    // std::cout << a[0] << " " << a[1] << std::endl;
-    // std::cout << b[0] << " " << b[1] << std::endl;
-    // std::cout << c[0] << " " << c[1] << std::endl;
     if (igl::copyleft::cgal::orient2D(a, b, c) <= 0)
     {
       // std::cout << "flip @ triangle: " << i << std::endl;
@@ -216,22 +206,12 @@ double bi_linesearch(
     step_size /= 2;
     // step_size -= 0.01;
     newx = cur_v + step_size * d;
-    if (check_flip(newx, F) > 0)
-    {
-      // std::cout << "cause flip, step_size/=2\n";
-      continue;
-    }
+    // if (check_flip(newx, F) > 0)
+    // {
+    //   // std::cout << "cause flip, step_size/=2\n";
+    //   continue;
+    // }
     new_energy = energy(newx);
-
-    // test line search
-    // std::cout << "step_size = " << step_size << "\t";
-    // std::cout << "energy0 = " << energy0 <<"\tnew_energy = " << new_energy << "\n";
-    // Eigen::VectorXd new_gradE = get_grad(newx);
-    // std::cout << "grad.dot(d) = " << new_gradE.dot(flat_d) << "\t";
-    // std::cout << "grad:\n" << new_gradE << std::endl;
-    // Xd newx_shift = newx + 1e-6 * d;
-    // std::cout << "de/ds = " << (energy(newx_shift) - new_energy) / 1e-6 << std::endl;
-
     // if (new_energy <= energy0 + c1 * step_size * slope) // armijo
     // {
     //   break;
