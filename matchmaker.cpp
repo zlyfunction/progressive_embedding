@@ -824,8 +824,8 @@ void match_maker(
   flipped_elements(uv, F, I);
   std::cout << "result #flips: " << I.sum() << std::endl;
 
-  igl::opengl::glfw::Viewer viewer;
-  viewer.data().clear();
-  viewer.data().set_mesh(uv, F);
-  viewer.launch();
+  // igl::opengl::glfw::Viewer viewer;
+  // viewer.data().clear();
+  // viewer.data().set_mesh(uv, F);
+  // viewer.launch();
 }

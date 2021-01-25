@@ -14,7 +14,6 @@
 #include "validity_check.h"
 #include <igl/remove_unreferenced.h>
 #include <igl/boundary_loop.h>
-#include <igl/boundary_loop.h>
 #include <igl/cat.h>
 #include <igl/doublearea.h>
 #include <igl/flip_avoiding_line_search.h>
@@ -41,6 +40,7 @@
 #include <unordered_set>
 #include <iomanip>
 #include "projected_newton.hpp"
+#include <set>
 long global_autodiff_time = 0;
 long global_project_time = 0;
 
@@ -78,7 +78,7 @@ spXd combine_Dx_Dy(const spXd &Dx, const spXd &Dy)
     return igl::cat(1, igl::cat(2, hstack, empty), igl::cat(2, empty, hstack));
 }
 
-void buildAeq(
+double buildAeq(
     const Eigen::MatrixXi &cut,
     const Eigen::MatrixXd &uv,
     const Eigen::MatrixXi &F,
@@ -96,7 +96,10 @@ void buildAeq(
     std::cout << "#components = " << bds.size() << std::endl;
     // Aeq.resize(2 * m, uv.rows() * 2);
     // try to fix 2 dof for each component
-    Aeq.resize(2 * m + 2 * bds.size(), uv.rows() * 2);
+    // Aeq.resize(2 * m + 2 * bds.size(), uv.rows() * 2);
+
+    // for harmonic
+    Aeq.resize(2 * m + 4 * bds.size(), uv.rows() * 2);
 
     int A, B, C, D, A2, B2, C2, D2;
     for (int i = 0; i < cut.rows(); i++)
@@ -162,6 +165,12 @@ void buildAeq(
             break;
         }
     }
+
+    auto Aeq_no_fix = Aeq;
+    Vd flat_uv = Eigen::Map<const Vd>(uv.data(), uv.size());
+    Aeq_no_fix.makeCompressed();
+    auto res = Aeq_no_fix * flat_uv;
+    std::cout << "check constraints:" << res.cwiseAbs().maxCoeff()<< std::endl;
     // add 2 constraints for each component
     for (auto l : bds)
     {
@@ -169,19 +178,17 @@ void buildAeq(
         Aeq.coeffRef(c, l[0]) = 1;
         Aeq.coeffRef(c + 1, l[0] + N) = 1;
         c = c + 2;
+        
+        // for harmonic
+        std::cout << "fix " << l[1] << std::endl;
+        Aeq.coeffRef(c, l[1]) = 1;
+        Aeq.coeffRef(c + 1, l[1] + N) = 1;
+        c = c + 2;
     }
 
     Aeq.makeCompressed();
     std::cout << "Aeq size " << Aeq.rows() << "," << Aeq.cols() << std::endl;
-    // test initial violation
-    // Eigen::VectorXd UV(uv.rows() * 2);
-    // UV << uv.col(0), uv.col(1);
-    // Eigen::SparseMatrix<double> t = UV.sparseView();
-    // t.makeCompressed();
-    // Eigen::SparseMatrix<double> mm = Aeq * t;
-    // Eigen::VectorXd z = Eigen::VectorXd(mm);
-    // if (z.rows() > 0)
-    //     std::cout << "max violation " << z.cwiseAbs().maxCoeff() << std::endl;
+    return res.cwiseAbs().maxCoeff();
 }
 
 void buildkkt(spXd &hessian, spXd &Aeq, spXd &AeqT, spXd &kkt)
@@ -207,6 +214,68 @@ void buildkkt(spXd &hessian, spXd &Aeq, spXd &AeqT, spXd &kkt)
     kkt.finalize();
 }
 
+void check_total_angle(const Xd &uv, const Xi &F, const Xi &cut)
+{
+    Vd angles(uv.rows());
+    angles.setConstant(0);
+    std::vector<std::vector<int>> bds;
+    igl::boundary_loop(F, bds);
+    auto bd = bds[0];
+    for (int i = 0; i < F.rows(); i++)
+    {
+        for (int j = 0; j < 3; j++)
+        {
+            int v1 = F(i, j), v2 = F(i, (j+1) % 3), v0 = F(i, (j+2) % 3);
+            Eigen::Vector2d e10 = uv.row(v0) - uv.row(v1);
+            Eigen::Vector2d e12 = uv.row(v2) - uv.row(v1);
+            Eigen::Vector2d e10_perp;
+            e10_perp(0) = -e10(1); 
+            e10_perp(1) = e10(0);
+            angles(v1) += std::atan2(-e10_perp.dot(e12), e10.dot(e12));
+        }
+    }
+    
+
+    std::vector<std::set<int>> VV(uv.rows());
+
+    for (int i = 0; i < VV.size(); i++) VV[i].insert(i);
+    for (int i = 0; i < cut.rows(); i++)
+    {
+        for (int v : VV[cut(i, 3)])
+            VV[cut(i,0)].insert(VV[v].begin(), VV[v].end());       
+        for (int v : VV[cut(i, 0)])
+            VV[v] = VV[cut(i, 0)];
+        for (int v : VV[cut(i, 2)])
+            VV[cut(i,1)].insert(VV[v].begin(), VV[v].end());
+        for (int v : VV[cut(i, 1)])
+            VV[v] = VV[cut(i, 1)];
+    }
+
+    std::cout << "here" << std::endl;
+    Vd angles_total(uv.rows()); angles_total.setConstant(0);
+    for (int i = 0; i < angles_total.rows(); i++)
+    {
+        for (auto v : VV[i]) angles_total(i) += angles(v);
+    }
+
+    std::cout << "check total angles: " << std::endl;
+    std::vector<bool> is_visited(uv.rows(), false);
+    for (int i = 0; i < angles_total.rows(); i++)
+    {
+        if (is_visited[i]) continue;
+        if (std::abs(angles_total(i) - 2 * igl::PI) > 1e-5)
+        {
+            std::cout << "(";
+            for (int v : VV[i]) 
+            {
+                std::cout << v << " ";
+                is_visited[v] = true;
+            }
+            std::cout << ") : " << angles_total(i) / igl::PI * 180 << std::endl;
+        }
+    }
+}
+
 int main(int argc, char *argv[])
 {
     auto cmdl = argh::parser(argc, argv, argh::parser::PREFER_PARAM_FOR_UNREG_OPTION);
@@ -216,17 +285,17 @@ int main(int argc, char *argv[])
         std::cout << "-in: input model name" << std::endl;
         std::cout << "-o: output model name" << std::endl;
         std::cout << "-uv: input uv" << std::endl;
-        std::cout << "-c: opt with constraints (0, 1)" << std::endl;
+        std::cout << "-c: opt steps" << std::endl;
         exit(0);
     }
 
     int threshold;
     std::string model, uv_file, outfile;
-    bool use_bd, space_filling_curve;
-    int use_c;
+    bool use_harm, space_filling_curve;
+    int total_steps;
     cmdl("-in") >> model;
     cmdl("-uv") >> uv_file;
-    cmdl("-c") >> use_c;
+    cmdl("-c") >> total_steps;
     cmdl("-o", model + "_out.obj") >> outfile;
 
     Eigen::MatrixXd V, uv, uv_test, uv_out;
@@ -262,12 +331,11 @@ int main(int argc, char *argv[])
     std::cout << F_uv.rows() << std::endl;
     std::cout << F.rows() << std::endl;
     std::cout << uv.rows() << std::endl;
-    // std::cout << S.rows() << std::endl;
     std::cout << corres.size() << std::endl;
 
     std::vector<std::vector<int>> bds_uv;
     igl::boundary_loop(F_uv, bds_uv);
-// compute target angle of singularities
+    // compute target angle of singularities
     S.resize(uv.rows());
     S.setConstant(0);
     std::cout << "singularity angles:" << std::endl;
@@ -293,13 +361,7 @@ int main(int argc, char *argv[])
     }
 
     std::cout << "bds_uv sizse = " << bds_uv.size() << std::endl;
-    for (auto bd : bds_uv)
-    {
-        for (int i : bd)
-            std::cout << i << " ";
-        std::cout << std::endl;
-    }
-
+    std::cout << "check corres:" << std::endl;
     for (auto it = corres.begin(); it != corres.end(); it++)
     {
         std::cout << "(" << it->first.first << "," << it->first.second << "):(";
@@ -308,20 +370,17 @@ int main(int argc, char *argv[])
         std::cout << ")" << std::endl;
     }
 
-    // igl::opengl::glfw::Viewer viewer;
-    // viewer.data().set_mesh(uv, F_uv);
-    // viewer.launch();
-    // return 0;
+
+    /////////////////////////////////
+    // prepare for match_maker
+    ////////////////////////////////
     Eigen::MatrixXd c;
     Eigen::VectorXi ci;
     Eigen::MatrixXd uv_new;
-
     Eigen::VectorXi T, R, mark;
     Eigen::MatrixXd polygon;
-
     Eigen::VectorXi V_map(uv.rows());
     V_map.setConstant(-1);
-
     auto bd = bds_uv[0];
     for (int i = 0; i < bd.size(); i++)
     {
@@ -382,33 +441,25 @@ int main(int argc, char *argv[])
             std::cout << cut.row(i) << "\tlendiff: " << fabs(l1 - l2) << std::endl;
         }
     }
-
     // return 0;
-    std::cout << R.rows() << " " << T.rows() << " " << polygon.rows();
-
+    std::cout << R.rows() << " " << T.rows() << " " << polygon.rows() << std::endl;
     match_maker(V, F, uv_new, c, ci, R, T, polygon, mark);
 
+    ///////////////////////////////////
+    // update cut (constraints)
+    //////////////////////////////////
     auto cut_copy = cut;
     for (int i = 0; i < polygon.rows(); i++)
     {
-        for (int j = 0; j < uv_new.rows(); j++)
+        for (int cut_row = 0; cut_row < cut.rows(); cut_row++)
         {
-            if (polygon.row(i) == uv_new.row(j))
+            for (int cut_col = 0; cut_col < 4; cut_col++)
             {
-                std::cout << "polygon(" << i << ") = uv_new(" << j << ")" << std::endl;
-                for (int cut_row = 0; cut_row < cut.rows(); cut_row++)
-                {
-                    for (int cut_col = 0; cut_col < 4; cut_col++)
-                    {
-                        if (cut_copy(cut_row, cut_col) == i)
-                            cut(cut_row, cut_col) = j;
-                    }
-                }
-                break;
+                if (cut_copy(cut_row, cut_col) == i)
+                    cut(cut_row, cut_col) = T(i);
             }
         }
     }
-
     std::cout << "check new cut" << std::endl;
     for (int i = 0; i < cut.rows(); i++)
     {
@@ -421,17 +472,51 @@ int main(int argc, char *argv[])
         }
     }
 
-    // prepare for opt
-    // Xd cur_uv = uv_new;
-    // build constraints
-    spXd Aeq;
-    buildAeq(cut, uv_new, F, Aeq);
-    spXd AeqT = Aeq.transpose();
+    // check_total_angle(uv_new, F, cut);
 
+    // compute triangle areas
+    Vd dblarea_uv;
+    dblarea_uv *= 0.5;
+    igl::doublearea(uv_new, F, dblarea_uv);
     Vd dblarea;
     igl::doublearea(V, F, dblarea);
     dblarea *= 0.5;
     double mesh_area = dblarea.sum();
+
+    //////////////////////////
+    // check triangle quality
+    /////////////////////////
+    std::cout << "check triangle quality:" << std::endl;
+    double max_ar_uv = -1;
+    double max_ar = -1;
+    for (int i = 0; i < F.rows(); i++)
+    {
+        double max_l = -1, max_l_uv = -1;
+        for (int j = 0; j < 3; j++)
+        {
+            int v0 = F(i, j), v1 = F(i, (j + 1) % 3);
+            double l_uv = (uv_new.row(v0) - uv_new.row(v1)).norm();
+            double l = (V.row(v0) - V.row(v1)).norm();
+            if (l_uv > max_l_uv)
+                max_l_uv = l_uv;
+            if (l > max_l)
+                max_l = l;
+        }
+        double ar_uv = max_l_uv * max_l_uv / 2 / dblarea_uv(i);
+        double ar = max_l * max_l / 2 / dblarea(i);
+        if (ar_uv > max_ar_uv)
+            max_ar_uv = ar_uv;
+        if (ar > max_ar)
+            max_ar = ar;
+    }
+    std::cout << "max_ar_uv : " << max_ar_uv << std::endl;
+    std::cout << "mar_ar : " << max_ar << std::endl;
+    
+    ///////////////////////////
+    // build constraints
+    spXd Aeq;
+    buildAeq(cut, uv_new, F, Aeq);
+    spXd AeqT = Aeq.transpose();
 
     spXd Dx, Dy, G;
     prepare(V, F, Dx, Dy);
@@ -443,11 +528,27 @@ int main(int argc, char *argv[])
         return compute_energy_from_jacobian(Ji, dblarea);
     };
 
+    auto compute_energy_max = [&G, &dblarea, &mesh_area](Eigen::MatrixXd &aaa) {
+        Xd Ji;
+        jacobian_from_uv(G, aaa, Ji);
+        auto E = symmetric_dirichlet_energy(Ji.col(0), Ji.col(1), Ji.col(2), Ji.col(3));
+        double max_e = -1;
+        for (int i = 0; i < E.size(); i++)
+        {
+            if (E(i) > max_e)
+            {
+                max_e = E(i);
+            }
+        }
+        return max_e;
+    };
+
     double energy = compute_energy(uv_new);
     std::cout << "Start Energy" << energy << std::endl;
 
-    auto do_opt = [&F, &Aeq, &AeqT, &G, &dblarea, &compute_energy](Eigen::MatrixXd &cur_uv, int N) {
+    auto do_opt = [&F, &Aeq, &AeqT, &G, &dblarea, &compute_energy, &compute_energy_max](Eigen::MatrixXd &cur_uv, int N) {
         double energy = compute_energy(cur_uv);
+        double energy_old = -1;
         Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
         for (int ii = 0; ii < N; ii++)
         {
@@ -459,7 +560,7 @@ int main(int argc, char *argv[])
             if (ii == 0)
                 solver.analyzePattern(kkt);
             grad.conservativeResize(kkt.cols());
-            for (int i = hessian.cols() + 1; i < kkt.cols(); i++)
+            for (int i = hessian.cols(); i < kkt.cols(); i++)
                 grad(i) = 0;
             solver.factorize(kkt);
             // if (ii == 0)
@@ -471,106 +572,37 @@ int main(int argc, char *argv[])
             grad.conservativeResize(hessian.cols());
             Xd new_dir = -Eigen::Map<Xd>(newton.data(), cur_uv.rows(), 2); // newton dir
             energy = bi_linesearch(F, cur_uv, new_dir, compute_energy, grad, energy);
-            std::cout << std::setprecision(20) << energy << std::endl;
+
+            std::cout << std::setprecision(20) << "E_avg" << energy << "\tE_max" << compute_energy_max(cur_uv) << std::endl;
+            std::cout << "grad.norm()" << grad.norm() << std::endl;
+            if (energy == energy_old)
+            {
+                std::cout << "opt finished" << std::endl;
+                break;
+            }
+            energy_old = energy;
         }
         return energy;
     };
     // return 0;
 
-    igl::SLIMData sData;
-    sData.slim_energy = igl::SLIMData::SYMMETRIC_DIRICHLET;
-    igl::SLIMData::SLIM_ENERGY energy_type = igl::SLIMData::SYMMETRIC_DIRICHLET;
-    //Eigen::SparseMatrix<double> Aeq;
-    Eigen::VectorXd E;
-    slim_precompute(V, F, uv_new, sData, igl::SLIMData::SYMMETRIC_DIRICHLET, ci, c, 0, true, E, 1.0);
-    igl::opengl::glfw::Viewer vr;
-    vr.data().set_mesh(V, F);
-    double scale = 1.0;
-    auto key_down = [&](
-                        igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifier) {
-        if (key == ' ')
+    do_opt(uv_new, total_steps);
+
+    double lendiff_max = -1;
+    for (int i = 0; i < cut.rows(); i++)
+    {
+        double l1 = (uv_new.row(cut(i, 0)) - uv_new.row(cut(i, 1))).norm();
+        double l2 = (uv_new.row(cut(i, 2)) - uv_new.row(cut(i, 3))).norm();
+        if (fabs(l1 - l2) > 1e-5)
         {
-            slim_solve(sData, 20, E);
-            // std::cout << E.maxCoeff() << std::endl;
-            std::cout << E.sum() / E.rows() << std::endl;
-            viewer.data().clear();
-            viewer.data().set_mesh(V, F);
-            // for (int i = 0; i < 3; i++)
-            //     viewer.data().add_points(V.row(ci(i)), Eigen::RowVector3d(1, 0, 0));
-            viewer.core().align_camera_center(V);
-            viewer.data().set_uv(sData.V_o, F);
-            viewer.data().show_texture = true;
+            std::cout << cut.row(i) << "\tlendiff: " << fabs(l1 - l2) << std::endl;
         }
-        if (key == '1')
+        if (fabs(l1 - l2) > lendiff_max)
         {
-            slim_solve(sData, 20, E);
-            viewer.data().clear();
-            viewer.data().set_mesh(sData.V_o, F);
-            // for (int i = 0; i < 3; i++)
-            //     viewer.data().add_points(sData.V_o.row(ci(i)), Eigen::RowVector3d(1, 0, 0));
-            viewer.core().align_camera_center(sData.V_o);
-            viewer.data().show_texture = false;
+            lendiff_max = fabs(l1 - l2);
         }
-        if (key == ',')
-        {
-            scale *= 2.0;
-            viewer.data().set_mesh(V, F);
-            viewer.core().align_camera_center(V);
-            viewer.data().set_uv(sData.V_o * scale, F);
-            viewer.data().show_texture = true;
-        }
-        if (key == '.')
-        {
-            scale /= 2.0;
-            viewer.data().set_mesh(V, F);
-            viewer.core().align_camera_center(V);
-            viewer.data().set_uv(sData.V_o * scale, F);
-            viewer.data().show_texture = true;
-        }
-        return false;
-    };
-    auto key_down_new = [&](
-                            igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifier) {
-        if (key == ' ')
-        {
-            energy = do_opt(uv_new, 50);
-            viewer.data().clear();
-            viewer.data().set_mesh(V, F);
-            viewer.core().align_camera_center(V);
-            viewer.data().set_uv(uv_new, F);
-            viewer.data().show_texture = true;
-        }
-        if (key == '1')
-        {
-            viewer.data().clear();
-            viewer.data().set_mesh(uv_new, F);
-            viewer.core().align_camera_center(uv_new);
-            viewer.data().show_texture = false;
-        }
-        if (key == ',')
-        {
-            scale *= 2.0;
-            viewer.data().set_mesh(V, F);
-            viewer.core().align_camera_center(V);
-            viewer.data().set_uv(uv_new * scale, F);
-            viewer.data().show_texture = true;
-        }
-        if (key == '.')
-        {
-            scale /= 2.0;
-            viewer.data().set_mesh(V, F);
-            viewer.core().align_camera_center(V);
-            viewer.data().set_uv(uv_new * scale, F);
-            viewer.data().show_texture = true;
-        }
-        return false;
-    };
-    if (use_c == 1)
-        vr.callback_key_down = key_down_new;
-    else
-        vr.callback_key_down = key_down;
-    //plot_mesh(vr,uv,F,{},Eigen::VectorXi());
-    vr.launch();
+    }
+    std::cout << "max lendiff : " << lendiff_max << std::endl;
 
     Eigen::MatrixXd CN;
     Eigen::MatrixXi FN;
