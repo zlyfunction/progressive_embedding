@@ -76,8 +76,8 @@ int main(int argc, char *argv[])
     Xi cut;
     std::vector<std::vector<int>> bds;
     igl::boundary_loop(F, bds);
-    auto bd = bds[0];
-    std::vector<bool> is_visited(bd.size(), false);
+    std::vector<int> bd = bds[0];
+    std::vector<bool> is_visited(uv.rows(), false);
     for (int i = 0; i < bd.size(); i++)
     {
         int v0 = bd[i], v1 = bd[(i + 1) % bd.size()];
@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
         is_visited[v0] = true;
         for (int j = 0; j < bd.size(); j++)
         {
-            int v2 = bd[j], v3 = bd[(j + 1) % bd.size()];
+            int v2 = bd[j], v3 = bd[(j + 1) % (int)bd.size()];
             if (uv2V(v0) == uv2V(v3) && uv2V(v1) == uv2V(v2))
             {
                 cut.conservativeResize(cut.rows() + 1, 4);
@@ -115,7 +115,7 @@ int main(int argc, char *argv[])
     spXd AeqT = Aeq.transpose();
     
 //    uv(2,0) += 0.2;
-    uv(2,1) += 0.3;
+    // uv(2,1) += 0.3;
     
     Vd dblarea;
     igl::doublearea(V, F, dblarea);

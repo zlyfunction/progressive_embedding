@@ -13,7 +13,7 @@ using Xi = Eigen::MatrixXi;
 using spXd = Eigen::SparseMatrix<double>;
 
 template <typename T>
-#define SYMMETRIC_DIRICHLET_LEYI
+// #define SYMMETRIC_DIRICHLET_LEYI
 #ifdef SYMMETRIC_DIRICHLET_LEYI
 T symmetric_dirichlet_energy_t(T a, T b, T c, T d)
 {

@@ -206,11 +206,13 @@ double bi_linesearch(
     step_size /= 2;
     // step_size -= 0.01;
     newx = cur_v + step_size * d;
-    // if (check_flip(newx, F) > 0)
-    // {
-    //   // std::cout << "cause flip, step_size/=2\n";
-    //   continue;
-    // }
+#ifdef CHECK_FLIP
+    if (check_flip(newx, F) > 0)
+    {
+      // std::cout << "cause flip, step_size/=2\n";
+      continue;
+    }
+#endif
     new_energy = energy(newx);
     // if (new_energy <= energy0 + c1 * step_size * slope) // armijo
     // {
