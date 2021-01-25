@@ -437,5 +437,5 @@ int main(int argc, char *argv[])
 
     Eigen::MatrixXd CN;
     Eigen::MatrixXi FN;
-    igl::writeOBJ(outfile, V, F, CN, FN, uv_new, F);
+    igl::writeOBJ(outfile, V, F, uv_new, F, uv_new, F);
 }

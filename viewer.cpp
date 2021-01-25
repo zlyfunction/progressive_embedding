@@ -151,7 +151,8 @@ int main(int argc, char *argv[])
             for (int i = hessian.cols(); i < kkt.cols(); i++)
                 grad(i) = 0;
             solver.factorize(kkt);
-            Xd kkt_dense(kkt);
+            std::cout << "solver.info():" << solver.info() << std::endl;
+            // Xd kkt_dense(kkt);
             // std::cout << "kkt" << kkt << std::endl;
             // std::cout << "grad" << grad << std::endl;
             Vd newton = solver.solve(grad);
@@ -165,9 +166,7 @@ int main(int argc, char *argv[])
     };
 
     double scale = 1.0;
-    // char c;
-    // while(std::getchar())
-    //     do_opt(uv, 1);
+#ifdef VIEWER_LAUNCH
     igl::opengl::glfw::Viewer vr;
     auto key_down_new = [&](
                             igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifier) {
@@ -210,4 +209,8 @@ int main(int argc, char *argv[])
     vr.data().set_mesh(V, F);
     vr.callback_key_down = key_down_new;
     vr.launch();
+#else
+    while(std::getchar())
+        do_opt(uv, 1);
+#endif
 }
