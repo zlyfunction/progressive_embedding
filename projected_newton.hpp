@@ -18,9 +18,8 @@ T symmetric_dirichlet_energy_t(T a, T b, T c, T d)
   auto det = a * d - b * c;
   auto frob2 = a * a + b * b + c * c + d * d;
   auto frob2_inv = a * a / (det * det) + b * b / (det * det) + c * c / (det * det) + d * d / (det * det);
-  return frob2 * (1.0 + 1.0 / (det * det));
-  // return frob2 + a * a / (det * det) + b * b / (det * det) + c * c / (det * det) + d * d / (det * det);
-  // return frob2 + frob2_inv;
+  // return frob2 * (1.0 + 1.0 / (det * det));
+  return frob2;  
 }
 
 template <typename Derived>
@@ -34,7 +33,8 @@ inline auto symmetric_dirichlet_energy(const Eigen::MatrixBase<Derived> &a,
   auto frob2_inv = a.array().abs2() * det.abs2().inverse() + b.array().abs2() * det.abs2().inverse()+ c.array().abs2() * det.abs2().inverse()+ d.array().abs2()* det.abs2().inverse();
   // return (frob2 * (1 + (det).abs2().inverse())).matrix();
   
-  return (frob2 + frob2_inv).matrix();
+  // return (frob2 + frob2_inv).matrix();
+  return frob2.matrix();
 }
 
 template <typename DerivedH>
