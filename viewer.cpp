@@ -65,8 +65,10 @@ double buildAeq(
     // Aeq.resize(2 * m + 2 * bds.size(), uv.rows() * 2);
 
     // for harmonic
-    Aeq.resize(2 * m + 4 * bds.size(), uv.rows() * 2);
-
+    
+#define CONSTRAINTS
+#ifdef CONSTRAINTS
+    Aeq.resize(2 * m + 3 * bds.size(), uv.rows() * 2);
     int A, B, C, D, A2, B2, C2, D2;
     for (int i = 0; i < cut.rows(); i++)
     {
@@ -75,86 +77,68 @@ double buildAeq(
         int C2 = cut(i, 2);
         int D2 = cut(i, 3);
 
-        std::complex<double> l0, l1, r0, r1;
-        l0 = std::complex<double>(uv(A2, 0), uv(A2, 1));
-        l1 = std::complex<double>(uv(B2, 0), uv(B2, 1));
-        r0 = std::complex<double>(uv(C2, 0), uv(C2, 1));
-        r1 = std::complex<double>(uv(D2, 0), uv(D2, 1));
+        Eigen::Vector2d e_ab = uv.row(B2) - uv.row(A2);
+        Eigen::Vector2d e_dc = uv.row(C2) - uv.row(D2);
 
-        int r = std::round(2.0 * std::log((l0 - l1) / (r0 - r1)).imag() / igl::PI);
-        r = ((r % 4) + 4) % 4; // ensure that r is between 0 and 3
-        switch (r)
-        {
-        case 0:
-            Aeq.coeffRef(c, A2) += 1;
-            Aeq.coeffRef(c, B2) += -1;
-            Aeq.coeffRef(c, C2) += -1;
-            Aeq.coeffRef(c, D2) += 1;
-            Aeq.coeffRef(c + 1, A2 + N) += 1;
-            Aeq.coeffRef(c + 1, B2 + N) += -1;
-            Aeq.coeffRef(c + 1, C2 + N) += -1;
-            Aeq.coeffRef(c + 1, D2 + N) += 1;
-            c = c + 2;
-            break;
-        case 1:
-            Aeq.coeffRef(c, A2) += 1;
-            Aeq.coeffRef(c, B2) += -1;
-            Aeq.coeffRef(c, C2 + N) += 1;
-            Aeq.coeffRef(c, D2 + N) += -1;
-            Aeq.coeffRef(c + 1, C2) += 1;
-            Aeq.coeffRef(c + 1, D2) += -1;
-            Aeq.coeffRef(c + 1, A2 + N) += -1;
-            Aeq.coeffRef(c + 1, B2 + N) += 1;
-            c = c + 2;
-            break;
-        case 2:
-            Aeq.coeffRef(c, A2) += 1;
-            Aeq.coeffRef(c, B2) += -1;
-            Aeq.coeffRef(c, C2) += 1;
-            Aeq.coeffRef(c, D2) += -1;
-            Aeq.coeffRef(c + 1, A2 + N) += 1;
-            Aeq.coeffRef(c + 1, B2 + N) += -1;
-            Aeq.coeffRef(c + 1, C2 + N) += 1;
-            Aeq.coeffRef(c + 1, D2 + N) += -1;
-            c = c + 2;
-            break;
-        case 3:
-            Aeq.coeffRef(c, A2) += 1;
-            Aeq.coeffRef(c, B2) += -1;
-            Aeq.coeffRef(c, C2 + N) += -1;
-            Aeq.coeffRef(c, D2 + N) += 1;
-            Aeq.coeffRef(c + 1, C2) += 1;
-            Aeq.coeffRef(c + 1, D2) += -1;
-            Aeq.coeffRef(c + 1, A2 + N) += 1;
-            Aeq.coeffRef(c + 1, B2 + N) += -1;
-            c = c + 2;
-            break;
-        }
+        Eigen::Vector2d e_ab_perp;
+        e_ab_perp(0) = -e_ab(1);
+        e_ab_perp(1) = e_ab(0);
+        double angle = std::atan2(-e_ab_perp.dot(e_dc), e_ab.dot(e_dc));
+
+        int r = (int)(std::round(2 * angle / igl::PI) + 2) % 4;
+
+        std::vector<Eigen::Matrix2d> r_mat(4);
+        r_mat[0] << -1, 0, 0, -1;
+        r_mat[1] << 0, 1, -1, 0;
+        r_mat[2] << 1, 0, 0, 1;
+        r_mat[3] << 0, -1, 1, 0;
+
+        Aeq.coeffRef(c, A2) += 1;
+        Aeq.coeffRef(c, B2) += -1;
+        Aeq.coeffRef(c + 1, A2 + N) += 1;
+        Aeq.coeffRef(c + 1, B2 + N) += -1;
+
+        Aeq.coeffRef(c, C2) += r_mat[r](0, 0);
+        Aeq.coeffRef(c, D2) += -r_mat[r](0, 0);
+        Aeq.coeffRef(c, C2 + N) += r_mat[r](0, 1);
+        Aeq.coeffRef(c, D2 + N) += -r_mat[r](0, 1);
+        Aeq.coeffRef(c + 1, C2) += r_mat[r](1, 0);
+        Aeq.coeffRef(c + 1, D2) += -r_mat[r](1, 0);
+        Aeq.coeffRef(c + 1, C2 + N) += r_mat[r](1, 1);
+        Aeq.coeffRef(c + 1, D2 + N) += -r_mat[r](1, 1);
+        c = c + 2;
     }
 
     auto Aeq_no_fix = Aeq;
     Vd flat_uv = Eigen::Map<const Vd>(uv.data(), uv.size());
     Aeq_no_fix.makeCompressed();
     auto res = Aeq_no_fix * flat_uv;
-    std::cout << "check constraints:" << res.cwiseAbs().maxCoeff()<< std::endl;
-    // add 2 constraints for each component
+    std::cout << "check constraints:" << res.cwiseAbs().maxCoeff() << std::endl;
+#else
+    Aeq.resize(3 * bds.size(), uv.rows() * 2);
+#endif
+    // add 3 constraints for each component
     for (auto l : bds)
     {
         std::cout << "fix " << l[0] << std::endl;
         Aeq.coeffRef(c, l[0]) = 1;
         Aeq.coeffRef(c + 1, l[0] + N) = 1;
         c = c + 2;
-        
+
         // for harmonic
         std::cout << "fix " << l[1] << std::endl;
         Aeq.coeffRef(c, l[1]) = 1;
-        Aeq.coeffRef(c + 1, l[1] + N) = 1;
-        c = c + 2;
+        // Aeq.coeffRef(c + 1, l[1] + N) = 1;
+        c = c + 1;
     }
-
+    
+    std::cout << "bd loop:" << std::endl;
+    for (auto v : bds[0]) std::cout << v << " ";
+    std::cout << std::endl;
     Aeq.makeCompressed();
     std::cout << "Aeq size " << Aeq.rows() << "," << Aeq.cols() << std::endl;
-    return res.cwiseAbs().maxCoeff();
+    return 0;
+    // return res.cwiseAbs().maxCoeff();
 }
 
 void buildkkt(spXd &hessian, spXd &Aeq, spXd &AeqT, spXd &kkt)
@@ -214,14 +198,14 @@ spXd combine_Dx_Dy(const spXd &Dx, const spXd &Dy)
     return igl::cat(1, igl::cat(2, hstack, empty), igl::cat(2, empty, hstack));
 }
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
     std::string model = argv[1];
     Eigen::MatrixXd V, Vnew;
     Eigen::MatrixXd uv, CN;
     Eigen::MatrixXi F, Fuv, FN;
 
-    igl::readOBJ(model,V,uv,CN,F,Fuv,FN);
+    igl::readOBJ(model, V, uv, CN, F, Fuv, FN);
 
     Eigen::VectorXi uv2V(uv.rows());
     for (int i = 0; i < F.rows(); i++)
@@ -239,6 +223,11 @@ int main(int argc, char* argv[])
     V = Vnew;
     F = Fuv;
 
+    // double ratio = (uv.row(F(0, 1)) - uv.row(F(0, 0))).norm() / (V.row(F(0, 1)) - V.row(F(0, 0))).norm();
+    // uv = uv / ratio;
+    std::cout << (uv.row(F(1, 1)) - uv.row(F(1, 0))).norm() << "\t V " << (V.row(F(1, 1)) - V.row(F(1, 0))).norm() << std::endl;
+    
+   
     Xi cut;
     std::vector<std::vector<int>> bds;
     igl::boundary_loop(F, bds);
@@ -247,7 +236,8 @@ int main(int argc, char* argv[])
     for (int i = 0; i < bd.size(); i++)
     {
         int v0 = bd[i], v1 = bd[(i + 1) % bd.size()];
-        if (is_visited[v0]) continue;
+        if (is_visited[v0])
+            continue;
         is_visited[v0] = true;
         for (int j = 0; j < bd.size(); j++)
         {
@@ -258,9 +248,9 @@ int main(int argc, char* argv[])
                 cut.row(cut.rows() - 1) << v0, v1, v2, v3;
                 is_visited[v2] = true;
             }
-        }   
+        }
     }
-    
+
     // check cut
     std::cout << "check cut" << std::endl;
     for (int i = 0; i < cut.rows(); i++)
@@ -274,11 +264,14 @@ int main(int argc, char* argv[])
             std::cout << cut.row(i) << "\tlendiff: " << fabs(l1 - l2) << std::endl;
         }
     }
-    
+
     spXd Aeq;
     buildAeq(cut, uv, F, Aeq);
     spXd AeqT = Aeq.transpose();
-
+    
+//    uv(2,0) += 0.2;
+    uv(2,1) += 0.3;
+    
     Vd dblarea;
     igl::doublearea(V, F, dblarea);
     dblarea *= 0.5;
@@ -327,49 +320,49 @@ int main(int argc, char* argv[])
     };
 
     double scale = 1.0;
-    char c;
-    while(std::getchar())
-        do_opt(uv, 1);
-//     igl::opengl::glfw::Viewer vr;
-//     auto key_down_new = [&](
-//                             igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifier) {
-//         if (key == ' ')
-//         {
-//             energy = do_opt(uv, 1);
-//             viewer.data().clear();
-//             viewer.data().set_mesh(V, F);
-//             viewer.core().align_camera_center(V);
-//             viewer.data().set_uv(uv, F);
-//             viewer.data().show_texture = true;
-//         }
-//         if (key == '1')
-//         {
-//             viewer.data().clear();
-//             viewer.data().set_mesh(uv, F);
-//             viewer.core().align_camera_center(uv);
-//             viewer.data().show_texture = false;
-//         }
-//         if (key == ',')
-//         {
-//             scale *= 2.0;
-//             viewer.data().clear();
-//             viewer.data().set_mesh(V, F);
-//             viewer.core().align_camera_center(V);
-//             viewer.data().set_uv(uv * scale, F);
-//             viewer.data().show_texture = true;
-//         }
-//         if (key == '.')
-//         {
-//             scale /= 2.0;
-//             viewer.data().clear();
-//             viewer.data().set_mesh(V, F);
-//             viewer.core().align_camera_center(V);
-//             viewer.data().set_uv(uv * scale, F);
-//             viewer.data().show_texture = true;
-//         }
-//         return false;
-//     };
-//     vr.data().set_mesh(V, F);
-//     vr.callback_key_down = key_down_new;
-// vr.launch();
+    // char c;
+    // while(std::getchar())
+    //     do_opt(uv, 1);
+    igl::opengl::glfw::Viewer vr;
+    auto key_down_new = [&](
+                            igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifier) {
+        if (key == ' ')
+        {
+            energy = do_opt(uv, 1);
+            viewer.data().clear();
+            viewer.data().set_mesh(V, F);
+            viewer.core().align_camera_center(V);
+            viewer.data().set_uv(uv, F);
+            viewer.data().show_texture = true;
+        }
+        if (key == '1')
+        {
+            viewer.data().clear();
+            viewer.data().set_mesh(uv, F);
+            viewer.core().align_camera_center(uv);
+            viewer.data().show_texture = false;
+        }
+        if (key == ',')
+        {
+            scale *= 2.0;
+            viewer.data().clear();
+            viewer.data().set_mesh(V, F);
+            viewer.core().align_camera_center(V);
+            viewer.data().set_uv(uv * scale, F);
+            viewer.data().show_texture = true;
+        }
+        if (key == '.')
+        {
+            scale /= 2.0;
+            viewer.data().clear();
+            viewer.data().set_mesh(V, F);
+            viewer.core().align_camera_center(V);
+            viewer.data().set_uv(uv * scale, F);
+            viewer.data().show_texture = true;
+        }
+        return false;
+    };
+    vr.data().set_mesh(V, F);
+    vr.callback_key_down = key_down_new;
+    vr.launch();
 }
