@@ -2,7 +2,7 @@
 
 #include <iostream>
 #include <igl/Timer.h>
-
+#define CHECK_FLIP
 namespace jakob
 {
 

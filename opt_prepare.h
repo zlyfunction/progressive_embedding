@@ -3,6 +3,11 @@
 #include <igl/grad.h>
 #include <Eigen/Sparse>
 #include <igl/local_basis.h>
+using Xd = Eigen::MatrixXd;
+using Vd = Eigen::VectorXd;
+using Xi = Eigen::MatrixXi;
+using spXd = Eigen::SparseMatrix<double>;
+#define CONSTRAINTS
 
 double buildAeq(
     const Eigen::MatrixXi &cut,
@@ -26,7 +31,6 @@ double buildAeq(
 
     // for harmonic
     
-#define CONSTRAINTS
 #ifdef CONSTRAINTS
     Aeq.resize(2 * m + 3 * bds.size(), uv.rows() * 2);
     int A, B, C, D, A2, B2, C2, D2;
@@ -92,9 +96,9 @@ double buildAeq(
         c = c + 1;
     }
     
-    std::cout << "bd loop:" << std::endl;
-    for (auto v : bds[0]) std::cout << v << " ";
-    std::cout << std::endl;
+    // std::cout << "bd loop:" << std::endl;
+    // for (auto v : bds[0]) std::cout << v << " ";
+    // std::cout << std::endl;
     Aeq.makeCompressed();
     std::cout << "Aeq size " << Aeq.rows() << "," << Aeq.cols() << std::endl;
     return 0;

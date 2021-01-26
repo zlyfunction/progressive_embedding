@@ -115,17 +115,17 @@ int main(int argc, char *argv[])
         std::cout << "Usage: ./test_bin -options" << std::endl;
         std::cout << "-in: input model name" << std::endl;
         std::cout << "-o: output model name" << std::endl;
-        std::cout << "-uv: input uv" << std::endl;
+        // std::cout << "-uv: input uv" << std::endl;
         std::cout << "-c: opt steps" << std::endl;
         exit(0);
     }
 
     int threshold;
-    std::string model, uv_file, outfile;
+    std::string model, outfile;
     bool use_harm, space_filling_curve;
     int total_steps;
     cmdl("-in") >> model;
-    cmdl("-uv") >> uv_file;
+    // cmdl("-uv") >> uv_file;
     cmdl("-c") >> total_steps;
     cmdl("-o", model + "_out.obj") >> outfile;
 
@@ -135,10 +135,9 @@ int main(int argc, char *argv[])
     std::map<std::pair<int, int>, std::vector<int>> corres;
     igl::deserialize(V, "V", model); // output the original one
     igl::deserialize(F_uv, "Fuv", model);
-    igl::deserialize(F, "F_3d", model);
-    igl::deserialize(uv_test, "uv", model);
-    igl::deserialize(uv, "cur_uv", uv_file);
-    // igl::deserialize(S, "S", model);
+    igl::deserialize(F, "F3d", model);
+    // igl::deserialize(uv_test, "uv", model);
+    igl::deserialize(uv, "uv", model);
     igl::deserialize(corres, "corres", model);
 
     Xi cut;
@@ -303,7 +302,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    // check_total_angle(uv_new, F, cut);
+    check_total_angle(uv_new, F, cut);
 
     // compute triangle areas
     Vd dblarea_uv;
@@ -391,21 +390,26 @@ int main(int argc, char *argv[])
             if (ii == 0)
                 solver.analyzePattern(kkt);
             grad.conservativeResize(kkt.cols());
+            
             for (int i = hessian.cols(); i < kkt.cols(); i++)
                 grad(i) = 0;
             solver.factorize(kkt);
-            // if (ii == 0)
-            //     solver.analyzePattern(hessian);
-            // solver.factorize(hessian);
+            std::cout << "solver.info = " << solver.info() << std::endl;
+
 
             Vd newton = solver.solve(grad);
+            Vd res = kkt * newton - grad;
+            std::cout << "residual:" << res.norm() << "\t" << std::max(res.maxCoeff(), -res.minCoeff()) << std::endl;
+            
+            Vd w = -newton.tail(newton.rows() - hessian.cols());
             newton.conservativeResize(hessian.cols());
             grad.conservativeResize(hessian.cols());
+            Vd gradL = grad + AeqT * w;
             Xd new_dir = -Eigen::Map<Xd>(newton.data(), cur_uv.rows(), 2); // newton dir
             energy = bi_linesearch(F, cur_uv, new_dir, compute_energy, grad, energy);
 
-            std::cout << std::setprecision(20) << "E_avg" << energy << "\tE_max" << compute_energy_max(cur_uv) << std::endl;
-            std::cout << "grad.norm()" << grad.norm() << std::endl;
+            std::cout << std::setprecision(20) << "E_avg= " << energy << "\tE_max = " << compute_energy_max(cur_uv) << std::endl;
+            std::cout << "grad.norm() = " << gradL.norm() << std::endl << std::endl;
             if (energy == energy_old)
             {
                 std::cout << "opt finished" << std::endl;
@@ -434,6 +438,7 @@ int main(int argc, char *argv[])
         }
     }
     std::cout << "max lendiff : " << lendiff_max << std::endl;
+    buildAeq(cut, uv_new, F, Aeq);
 
     Eigen::MatrixXd CN;
     Eigen::MatrixXi FN;
