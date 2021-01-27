@@ -336,7 +336,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    check_total_angle(uv_new, F, cut, Sn, name);
+    // check_total_angle(uv_new, F, cut, Sn, name);
     // compute triangle areas
     Vd dblarea_uv;
     dblarea_uv *= 0.5;
@@ -412,9 +412,11 @@ int main(int argc, char *argv[])
     auto do_opt = [&F, &Aeq, &AeqT, &G, &dblarea, &compute_energy, &compute_energy_max](Eigen::MatrixXd &cur_uv, int N) {
         double energy = compute_energy(cur_uv);
         double energy_old = -1;
+        clock_t iter_start_time, iter_end_time;
         Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
         for (int ii = 0; ii < N; ii++)
         {
+            iter_start_time = clock();
             spXd hessian;
             Vd grad;
             get_grad_and_hessian(G, dblarea, cur_uv, grad, hessian);
@@ -442,7 +444,10 @@ int main(int argc, char *argv[])
             energy = bi_linesearch(F, cur_uv, new_dir, compute_energy, grad, energy);
 
             std::cout << std::setprecision(20) << "E_avg= " << energy << "\tE_max = " << compute_energy_max(cur_uv) << std::endl;
-            std::cout << "grad.norm() = " << gradL.norm() << std::endl << std::endl;
+            std::cout << "grad.norm() = " << gradL.norm() << std::endl;
+            
+            iter_end_time = clock();
+            std::cout << "time = " << (double)(iter_end_time - iter_start_time) / CLOCKS_PER_SEC << std::endl << std::endl;
             if (energy == energy_old)
             {
                 std::cout << "opt finished" << std::endl;
@@ -454,7 +459,15 @@ int main(int argc, char *argv[])
     };
     // return 0;
 
-    do_opt(uv_new, total_steps);
+    while (total_steps > 0)
+    {
+        do_opt(uv_new, 5);
+        total_steps -= 5;
+        igl::serialize(V, "V", name + "_latest_serialized", true);
+        igl::serialize(uv_new, "uv", name + "_latest_serialized");
+        igl::serialize(cut, "cut", name + "_latest_serialized");
+        igl::serialize(F, "F", name + "_latest_serialized");
+    }
 
     double lendiff_max = -1;
     for (int i = 0; i < cut.rows(); i++)
