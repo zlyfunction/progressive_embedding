@@ -7,7 +7,7 @@ using Xd = Eigen::MatrixXd;
 using Vd = Eigen::VectorXd;
 using Xi = Eigen::MatrixXi;
 using spXd = Eigen::SparseMatrix<double>;
-#define CONSTRAINTS
+#define CONSTRAINTS_SYM
 
 double buildAeq(
     const Eigen::MatrixXi &cut,
@@ -30,9 +30,12 @@ double buildAeq(
     // Aeq.resize(2 * m + 2 * bds.size(), uv.rows() * 2);
 
     // for harmonic
-    
-#ifdef CONSTRAINTS
+
+#ifdef CONSTRAINTS_SYM
     Aeq.resize(2 * m + 3 * bds.size(), uv.rows() * 2);
+#else
+    Aeq.resize(2 * m + 4 * bds.size(), uv.rows() * 2);
+#endif
     int A, B, C, D, A2, B2, C2, D2;
     for (int i = 0; i < cut.rows(); i++)
     {
@@ -78,24 +81,37 @@ double buildAeq(
     Aeq_no_fix.makeCompressed();
     auto res = Aeq_no_fix * flat_uv;
     std::cout << "check constraints:" << res.cwiseAbs().maxCoeff() << std::endl;
-#else
-    Aeq.resize(3 * bds.size(), uv.rows() * 2);
-#endif
     // add 3 constraints for each component
-    for (auto l : bds)
+    double min_u_diff = 1e10;
+    int min_u_diff_id = 0;
+    auto l = bds[0];
+    for (int i = 0; i < l.size(); i++)
     {
-        std::cout << "fix " << l[0] << std::endl;
-        Aeq.coeffRef(c, l[0]) = 1;
-        Aeq.coeffRef(c + 1, l[0] + N) = 1;
-        c = c + 2;
-
-        // for harmonic
-        std::cout << "fix " << l[1] << std::endl;
-        Aeq.coeffRef(c, l[1]) = 1;
-        // Aeq.coeffRef(c + 1, l[1] + N) = 1;
-        c = c + 1;
+        double u_diff = std::abs(uv(l[i], 0) - uv(l[(i + 1) % l.size()], 0));
+        if (u_diff < min_u_diff)
+        {
+            min_u_diff = u_diff;
+            min_u_diff_id = i;
+        }
     }
-    
+
+    std::cout << "min_u_diff = " << min_u_diff << std::endl;
+
+    std::cout << "fix " << l[min_u_diff_id] << std::endl;
+    Aeq.coeffRef(c, l[min_u_diff_id]) = 1;
+    Aeq.coeffRef(c + 1, l[min_u_diff_id] + N) = 1;
+    c = c + 2;
+
+    std::cout << "fix " << l[(min_u_diff_id + 1) % l.size()] << std::endl;
+#ifdef CONSTRAINTS_SYM
+    Aeq.coeffRef(c, l[(min_u_diff_id + 1) % l.size()]) = 1;
+    c = c + 1;
+#else
+    Aeq.coeffRef(c, l[(min_u_diff_id + 1) % l.size()]) = 1;
+    Aeq.coeffRef(c + 1, l[(min_u_diff_id + 1) % l.size()] + N) = 1;
+    c = c + 2;
+#endif
+
     // std::cout << "bd loop:" << std::endl;
     // for (auto v : bds[0]) std::cout << v << " ";
     // std::cout << std::endl;

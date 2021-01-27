@@ -42,10 +42,11 @@
 #include "projected_newton.hpp"
 #include <set>
 #include "opt_prepare.h"
+#include <time.h>
 long global_autodiff_time = 0;
 long global_project_time = 0;
 
-void check_total_angle(const Xd &uv, const Xi &F, const Xi &cut)
+void check_total_angle(const Xd &uv, const Xi &F, const Xi &cut, const Vd &Sn, const std::string &name)
 {
     Vd angles(uv.rows());
     angles.setConstant(0);
@@ -91,20 +92,36 @@ void check_total_angle(const Xd &uv, const Xi &F, const Xi &cut)
 
     std::cout << "check total angles: " << std::endl;
     std::vector<bool> is_visited(uv.rows(), false);
+    std::vector<std::vector<int>> cones;
+    std::vector<double> cone_angles;
     for (int i = 0; i < angles_total.rows(); i++)
     {
         if (is_visited[i]) continue;
         if (std::abs(angles_total(i) - 2 * igl::PI) > 1e-5)
-        {
+        {   
+            std::vector<int> onecone;
             std::cout << "(";
             for (int v : VV[i]) 
             {
                 std::cout << v << " ";
                 is_visited[v] = true;
+                onecone.push_back(v);
             }
             std::cout << ") : " << angles_total(i) / igl::PI * 180 << std::endl;
+            cones.push_back(onecone);
+            cone_angles.push_back(angles_total(i) / igl::PI * 180);
         }
     }
+
+    for (int i = 0; i < Sn.rows(); i++)
+    {
+        if (Sn(i) != 0)
+        {
+            std::cout << i << "\t" << Sn(i) << std::endl;
+        }
+    }
+    igl::serialize(cones, "cones", "./cones/cones_serialized_" + name, true);
+    igl::serialize(cone_angles, "cone_angles", "./cones/cones_serialized_" + name);
 }
 
 int main(int argc, char *argv[])
@@ -129,9 +146,13 @@ int main(int argc, char *argv[])
     cmdl("-c") >> total_steps;
     cmdl("-o", model + "_out.obj") >> outfile;
 
+    std::string name = model.substr(0, model.find_last_of("_"));
+    name = name.substr(name.find_last_of('/') + 1);
+
     Eigen::MatrixXd V, uv, uv_test, uv_out;
     Eigen::MatrixXi F_uv, F;
-    Eigen::VectorXi S;
+    Eigen::VectorXi S, JJ;
+    Vd SS;
     std::map<std::pair<int, int>, std::vector<int>> corres;
     igl::deserialize(V, "V", model); // output the original one
     igl::deserialize(F_uv, "Fuv", model);
@@ -139,7 +160,18 @@ int main(int argc, char *argv[])
     // igl::deserialize(uv_test, "uv", model);
     igl::deserialize(uv, "uv", model);
     igl::deserialize(corres, "corres", model);
+    igl::deserialize(SS, "S", model);
+    igl::deserialize(JJ, "J", model);
+    
+    std::cout << "SS size:" << SS.rows() << std::endl;
+    std::cout << "JJ size:" << JJ.rows() << std::endl;
 
+    Eigen::VectorXd Sn(V.rows());
+    Sn.setConstant(0);
+    for (int i = 0; i < V.rows(); i++)
+    {
+       if (SS(JJ(i)) != 0) Sn(i) = 360 * (1 - SS(JJ(i)));
+    }
     Xi cut;
     igl::deserialize(cut, "cut", model);
     std::cout << "cut.rows() = " << cut.rows() << std::endl;
@@ -162,6 +194,8 @@ int main(int argc, char *argv[])
     std::cout << F.rows() << std::endl;
     std::cout << uv.rows() << std::endl;
     std::cout << corres.size() << std::endl;
+    
+    igl::writeOBJ(name+"_no_match.obj", V, F, uv, F_uv, uv, F_uv);
 
     std::vector<std::vector<int>> bds_uv;
     igl::boundary_loop(F_uv, bds_uv);
@@ -302,8 +336,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    check_total_angle(uv_new, F, cut);
-
+    check_total_angle(uv_new, F, cut, Sn, name);
     // compute triangle areas
     Vd dblarea_uv;
     dblarea_uv *= 0.5;
@@ -439,7 +472,7 @@ int main(int argc, char *argv[])
     }
     std::cout << "max lendiff : " << lendiff_max << std::endl;
     buildAeq(cut, uv_new, F, Aeq);
-
+    std::cout << "#fl= " << check_flip(uv_new, F) << std::endl;
     Eigen::MatrixXd CN;
     Eigen::MatrixXi FN;
     igl::writeOBJ(outfile, V, F, uv_new, F, uv_new, F);
