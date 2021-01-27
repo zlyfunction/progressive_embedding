@@ -3,6 +3,7 @@
 #include <iostream>
 #include <igl/Timer.h>
 #define CHECK_FLIP
+#define NOHESSIAN
 namespace jakob
 {
 
@@ -111,11 +112,13 @@ double grad_and_hessian_from_jacobian(const Vd &area, const Xd &jacobian,
     Eigen::RowVector4d local_grad;
     energy += AD_ENGINE::gradient_and_hessian_from_J(J, local_grad, local_hessian) * area(i) / total_area;
 
-#ifndef NOHESSIAN
     local_grad *= area(i) / total_area;
+    total_grad.row(i) = local_grad;
+#ifndef NOHESSIAN
+    
     local_hessian *= area(i) / total_area;
     all_hessian[i] = local_hessian;
-    total_grad.row(i) = local_grad;
+    
 #endif
   }
   // #endif

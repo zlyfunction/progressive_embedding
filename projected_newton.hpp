@@ -13,8 +13,8 @@ using Xi = Eigen::MatrixXi;
 using spXd = Eigen::SparseMatrix<double>;
 
 template <typename T>
-#define SYMMETRIC_DIRICHLET_LEYI
-#ifdef SYMMETRIC_DIRICHLET_LEYI
+#define SYM_DIRICHLET_LEYI
+#ifdef SYM_DIRICHLET_LEYI
 T symmetric_dirichlet_energy_t(T a, T b, T c, T d)
 {
   auto det = a * d - b * c;
@@ -35,7 +35,8 @@ inline auto symmetric_dirichlet_energy(const Eigen::MatrixBase<Derived> &a,
   auto frob2_inv = a.array().abs2() * det.abs2().inverse() + b.array().abs2() * det.abs2().inverse()+ c.array().abs2() * det.abs2().inverse()+ d.array().abs2()* det.abs2().inverse();
   return (frob2 * (1 + (det).abs2().inverse())).matrix();
 }
-#else
+#endif
+#ifdef HARMONIC_LEYI 
 T symmetric_dirichlet_energy_t(T a, T b, T c, T d)
 {
   auto det = a * d - b * c;
@@ -60,7 +61,27 @@ inline auto symmetric_dirichlet_energy(const Eigen::MatrixBase<Derived> &a,
   return (frob2 - 2 * det).matrix();
 }
 #endif
+#ifdef AMIPS2D_LEYI
+T symmetric_dirichlet_energy_t(T a, T b, T c, T d)
+{
+ 
+  auto det = a * d - b * c;
+  auto frob2 = a * a + b * b + c * c + d * d;
+  // auto frob2_inv = a * a / (det * det) + b * b / (det * det) + c * c / (det * det) + d * d / (det * det);
+  // // return frob2 * (1.0 + 1.0 / (det * det));
+  return frob2 / det;  
+}
 
+template <typename Derived>
+inline auto symmetric_dirichlet_energy(const Eigen::MatrixBase<Derived> &a,
+                                       const Eigen::MatrixBase<Derived> &b, const Eigen::MatrixBase<Derived> &c, const Eigen::MatrixBase<Derived> &d)
+{
+  auto det = a.array() * d.array() - b.array() * c.array();
+  auto frob2 = a.array().abs2() + b.array().abs2() + c.array().abs2() + d.array().abs2();
+  
+  return (frob2 * det.inverse()).matrix();
+}
+#endif
 
 template <typename DerivedH>
 void project_hessian(Eigen::MatrixBase<DerivedH> &local_hessian)
