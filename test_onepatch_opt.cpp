@@ -416,7 +416,6 @@ int main(int argc, char *argv[])
         Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
         for (int ii = 0; ii < N; ii++)
         {
-            iter_start_time = clock();
             spXd hessian;
             Vd grad;
             get_grad_and_hessian(G, dblarea, cur_uv, grad, hessian);
@@ -428,11 +427,16 @@ int main(int argc, char *argv[])
             
             for (int i = hessian.cols(); i < kkt.cols(); i++)
                 grad(i) = 0;
+            iter_start_time = clock();
+            
             solver.factorize(kkt);
             std::cout << "solver.info = " << solver.info() << std::endl;
-
+            
 
             Vd newton = solver.solve(grad);
+
+            iter_end_time = clock();
+            std::cout << "time = " << (double)(iter_end_time - iter_start_time) / CLOCKS_PER_SEC << std::endl << std::endl;
             Vd res = kkt * newton - grad;
             std::cout << "residual:" << res.norm() << "\t" << std::max(res.maxCoeff(), -res.minCoeff()) << std::endl;
             
